@@ -10,6 +10,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ServerInfoAwareProviderFactory;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -17,11 +18,12 @@ import static org.keycloak.models.AuthenticationExecutionModel.Requirement.*;
 
 public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements AuthenticatorFactory, ServerInfoAwareProviderFactory {
 
-    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.class);
 
-    private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, ALTERNATIVE, DISABLED};
+    private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, DISABLED};
 
     private static final String PROVIDER_ID = "home-idp-discovery-matching-email";
+
+    public static final String CONF_NEGATE = "negate";
 
     private Config.Scope config;
 
@@ -57,12 +59,18 @@ public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements 
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return HomeIdpDiscoveryConfigProperties.CONFIG_PROPERTIES;
+        ProviderConfigProperty negateOutput = new ProviderConfigProperty();
+        negateOutput.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        negateOutput.setName(CONF_NEGATE);
+        negateOutput.setLabel("Negate output");
+        negateOutput.setHelpText("Apply a NOT to the check result. When this is true, then the condition will evaluate to true if the email does NOT match the discovered idp.");
+
+        return List.of(negateOutput);
     }
 
     @Override
     public Authenticator create(KeycloakSession session) {
-        return new HomeIdpDiscoveryLoginHintAuthenticator();
+        return new HomeIdpDiscoveryMatchingEmailAuthenticator();
     }
 
     @Override

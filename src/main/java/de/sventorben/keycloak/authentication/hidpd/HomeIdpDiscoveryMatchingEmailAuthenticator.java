@@ -1,35 +1,51 @@
 package de.sventorben.keycloak.authentication.hidpd;
 
+import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.authentication.AuthenticationFlowException;
 import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticator;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
+import org.keycloak.authentication.authenticators.conditional.ConditionalAuthenticator;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
-import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.models.*;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Optional;
 
-public class HomeIdpDiscoveryMatchingEmailAuthenticator extends AbstractIdpAuthenticator {
+public class HomeIdpDiscoveryMatchingEmailAuthenticator implements ConditionalAuthenticator {
+    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.class);
 
     @Override
-    protected void authenticateImpl(AuthenticationFlowContext context, SerializedBrokeredIdentityContext userCtx, BrokeredIdentityContext brokeredIdentityContext) {
-        String providerId = brokeredIdentityContext.getIdpConfig().getProviderId();
+    public boolean matchCondition(AuthenticationFlowContext context) {
+        AuthenticationSessionModel clientSession = context.getAuthenticationSession();
 
-        Optional<IdentityProviderModel> homeIdp = new HomeIdpDiscoverer(context).discoverForUser(userCtx.getEmail());
-        boolean emailMatchesProvider = homeIdp.map(x -> x.getProviderId().equals(providerId)).orElse(false);
-        if (emailMatchesProvider) {
-            context.success();
-            return;
+        SerializedBrokeredIdentityContext serializedCtx = SerializedBrokeredIdentityContext.readFromAuthenticationSession(clientSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
+        if (serializedCtx == null) {
+            throw new AuthenticationFlowException("Not found serialized context in clientSession", AuthenticationFlowError.IDENTITY_PROVIDER_ERROR);
+        }
+        BrokeredIdentityContext brokerContext = serializedCtx.deserialize(context.getSession(), clientSession);
+        String providerId = brokerContext.getIdpConfig().getProviderId();
+
+        LOG.info("Checking if email matches idp " + serializedCtx.getEmail());
+        LOG.info("Broker username" + serializedCtx.getBrokerUsername());
+        LOG.info("Model username" + serializedCtx.getModelUsername());
+
+        Optional<IdentityProviderModel> homeIdp = new HomeIdpDiscoverer(context).discoverForUser(serializedCtx.getEmail());
+        boolean matchesEmail = homeIdp.map(x -> x.isEnabled() && x.getProviderId().equals(providerId)).orElse(false);
+
+        AuthenticatorConfigModel authConfig = context.getAuthenticatorConfig();
+        if (authConfig!=null && authConfig.getConfig()!=null) {
+            boolean negateOutput = Boolean.parseBoolean(authConfig.getConfig().get(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.CONF_NEGATE));
+            return negateOutput != matchesEmail;
         }
 
-        context.attempted();
+        return matchesEmail;
     }
 
     @Override
-    protected void actionImpl(AuthenticationFlowContext authenticationFlowContext, SerializedBrokeredIdentityContext serializedBrokeredIdentityContext, BrokeredIdentityContext brokeredIdentityContext) {
-        authenticateImpl(authenticationFlowContext,serializedBrokeredIdentityContext, brokeredIdentityContext);
+    public void action(AuthenticationFlowContext context) {
+        // Not used
     }
 
     @Override
@@ -38,8 +54,13 @@ public class HomeIdpDiscoveryMatchingEmailAuthenticator extends AbstractIdpAuthe
     }
 
     @Override
-    public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
-        return true;
+    public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
+        // Not used
+    }
+
+    @Override
+    public void close() {
+        // Not used
     }
 }
 

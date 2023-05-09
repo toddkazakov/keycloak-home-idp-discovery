@@ -17,8 +17,6 @@ import static org.keycloak.models.AuthenticationExecutionModel.Requirement.*;
 
 public final class HomeIdpDiscoveryLoginHintAuthenticatorFactory implements AuthenticatorFactory, ServerInfoAwareProviderFactory {
 
-    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryLoginHintAuthenticatorFactory.class);
-
     private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, ALTERNATIVE, DISABLED};
 
     private static final String PROVIDER_ID = "home-idp-discovery-login-hint";
@@ -57,7 +55,7 @@ public final class HomeIdpDiscoveryLoginHintAuthenticatorFactory implements Auth
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return HomeIdpDiscoveryConfigProperties.CONFIG_PROPERTIES;
+        return List.of();
     }
 
     @Override

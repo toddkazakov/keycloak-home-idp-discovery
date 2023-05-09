@@ -2,10 +2,10 @@ package de.sventorben.keycloak.authentication.hidpd;
 
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.models.FederatedIdentityModel;
-import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.UserModel;
+import org.keycloak.authentication.ValidationContext;
+import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Collections;
 import java.util.List;
@@ -18,31 +18,52 @@ final class HomeIdpDiscoverer {
     private static final Logger LOG = Logger.getLogger(HomeIdpDiscoverer.class);
 
     private final DomainExtractor domainExtractor;
-    private final AuthenticationFlowContext context;
+
+    private final KeycloakSession session;
+
+    private final AuthenticationSessionModel authenticationSession;
+
+    private final RealmModel realm;
+
+    private final AuthenticatorConfigModel authenticatorConfig;
+
+    private final UserModel userInContext;
 
     HomeIdpDiscoverer(AuthenticationFlowContext context) {
         this(new DomainExtractor(new HomeIdpDiscoveryConfig(context.getAuthenticatorConfig())), context);
     }
 
+
     HomeIdpDiscoverer(DomainExtractor domainExtractor, AuthenticationFlowContext context) {
+        this(domainExtractor, context.getSession(), context.getAuthenticationSession(), context.getRealm(), context.getAuthenticatorConfig(), context.getUser());
+    }
+
+    HomeIdpDiscoverer(ValidationContext context) {
+        this(new DomainExtractor(new HomeIdpDiscoveryConfig(null)), context.getSession(), context.getAuthenticationSession(), context.getRealm(), null, null);
+    }
+
+    HomeIdpDiscoverer(DomainExtractor domainExtractor, KeycloakSession session, AuthenticationSessionModel authenticationSession, RealmModel realm, AuthenticatorConfigModel authenticatorConfig, UserModel userInContext) {
         this.domainExtractor = domainExtractor;
-        this.context = context;
+        this.session = session;
+        this.authenticationSession = authenticationSession;
+        this.realm = realm;
+        this.authenticatorConfig = authenticatorConfig;
+        this.userInContext = userInContext;
     }
 
     public Optional<IdentityProviderModel> discoverForUser(String username) {
         Optional<IdentityProviderModel> homeIdp = Optional.empty();
 
         final Optional<String> emailDomain;
-        UserModel user = context.getUser();
-        if (user == null) {
+        if (userInContext == null) {
             emailDomain = domainExtractor.extractFrom(username);
         } else {
-            emailDomain = domainExtractor.extractFrom(user);
+            emailDomain = domainExtractor.extractFrom(userInContext);
         }
 
         if (emailDomain.isPresent()) {
             String domain = emailDomain.get();
-            homeIdp = discoverHomeIdp(domain, user, username);
+            homeIdp = discoverHomeIdp(domain, userInContext, username);
             if (homeIdp.isEmpty()) {
                 LOG.tracef("Could not find home IdP for domain %s and user %s", domain, username);
             }
@@ -56,18 +77,18 @@ final class HomeIdpDiscoverer {
     private Optional<IdentityProviderModel> discoverHomeIdp(String domain, UserModel user, String username) {
         final Map<String, String> linkedIdps;
 
-        HomeIdpDiscoveryConfig config = new HomeIdpDiscoveryConfig(context.getAuthenticatorConfig());
+        HomeIdpDiscoveryConfig config = new HomeIdpDiscoveryConfig(authenticatorConfig);
         if (user == null || !config.forwardToLinkedIdp()) {
             linkedIdps = Collections.emptyMap();
         } else {
-            linkedIdps = context.getSession().users()
-                .getFederatedIdentitiesStream(context.getRealm(), user)
+            linkedIdps = session.users()
+                .getFederatedIdentitiesStream(realm, user)
                 .collect(
                     Collectors.toMap(FederatedIdentityModel::getIdentityProvider, FederatedIdentityModel::getUserName));
         }
 
         // enabled IdPs with domain
-        List<IdentityProviderModel> idpsWithDomain = context.getRealm().getIdentityProvidersStream()
+        List<IdentityProviderModel> idpsWithDomain = realm.getIdentityProvidersStream()
             .filter(IdentityProviderModel::isEnabled)
             .filter(it -> new IdentityProviderModelConfig(it).hasDomain(config.userAttribute(), domain))
             .collect(Collectors.toList());
@@ -79,7 +100,7 @@ final class HomeIdpDiscoverer {
 
         // linked and enabled IdPs
         if (homeIdp.isEmpty() && !linkedIdps.isEmpty()) {
-            homeIdp = context.getRealm().getIdentityProvidersStream()
+            homeIdp = realm.getIdentityProvidersStream()
                 .filter(IdentityProviderModel::isEnabled)
                 .filter(it -> linkedIdps.containsKey(it.getAlias()))
                 .findFirst();
@@ -93,9 +114,9 @@ final class HomeIdpDiscoverer {
         homeIdp.ifPresent(it -> {
             if (linkedIdps.containsKey(it.getAlias()) && config.forwardToLinkedIdp()) {
                 String idpUsername = linkedIdps.get(it.getAlias());
-                context.getAuthenticationSession().setClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM, idpUsername);
+                authenticationSession.setClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM, idpUsername);
             } else {
-                context.getAuthenticationSession().setClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM, username);
+                authenticationSession.setClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM, username);
             }
         });
 
