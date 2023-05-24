@@ -11,14 +11,24 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.*;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
-import java.util.Optional;
+import java.util.List;
 
 public class HomeIdpDiscoveryMatchingEmailAuthenticator implements ConditionalAuthenticator {
     private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.class);
 
+    private static final String LINKING_IDENTITY_PROVIDER_NOTE = "LINKING_IDENTITY_PROVIDER";
+
     @Override
     public boolean matchCondition(AuthenticationFlowContext context) {
         AuthenticationSessionModel clientSession = context.getAuthenticationSession();
+        String linkingNote = clientSession.getAuthNote(LINKING_IDENTITY_PROVIDER_NOTE);
+
+        if (linkingNote != null) {
+            // Always assume the email matches the linking provider
+            // if we're in a client initiated linking flow
+            LOG.debug("Skipping email match check in client initiated account linking session");
+            return true;
+        }
 
         SerializedBrokeredIdentityContext serializedCtx = SerializedBrokeredIdentityContext.readFromAuthenticationSession(clientSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
         if (serializedCtx == null) {
@@ -27,12 +37,10 @@ public class HomeIdpDiscoveryMatchingEmailAuthenticator implements ConditionalAu
         BrokeredIdentityContext brokerContext = serializedCtx.deserialize(context.getSession(), clientSession);
         String providerId = brokerContext.getIdpConfig().getProviderId();
 
-        LOG.info("Checking if email matches idp " + serializedCtx.getEmail());
-        LOG.info("Broker username" + serializedCtx.getBrokerUsername());
-        LOG.info("Model username" + serializedCtx.getModelUsername());
+        List<IdentityProviderModel> homeIdps = new HomeIdpDiscoverer(context).discoverForUser(serializedCtx.getEmail());
+        boolean matchesEmail = homeIdps.stream().anyMatch(x -> x.isEnabled() && x.getProviderId().equals(providerId));
 
-        Optional<IdentityProviderModel> homeIdp = new HomeIdpDiscoverer(context).discoverForUser(serializedCtx.getEmail());
-        boolean matchesEmail = homeIdp.map(x -> x.isEnabled() && x.getProviderId().equals(providerId)).orElse(false);
+        LOG.debugf("Email %s %s identity provider %s", serializedCtx.getEmail(), matchesEmail ? "matches" : "doesn't match", providerId);
 
         AuthenticatorConfigModel authConfig = context.getAuthenticatorConfig();
         if (authConfig!=null && authConfig.getConfig()!=null) {

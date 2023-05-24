@@ -3,7 +3,7 @@
 This is a simple Keycloak authenticator to redirect users to their home identity provider during login.
 
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/sventorben/keycloak-home-idp-discovery?sort=semver)
-![Keycloak Dependency Version](https://img.shields.io/badge/Keycloak-20.0.1-blue)
+![Keycloak Dependency Version](https://img.shields.io/badge/Keycloak-21.1.1-blue)
 ![GitHub Release Date](https://img.shields.io/github/release-date-pre/sventorben/keycloak-home-idp-discovery)
 ![Github Last Commit](https://img.shields.io/github/last-commit/sventorben/keycloak-home-idp-discovery)
 
@@ -18,7 +18,17 @@ This authenticator allows to skip the step of selecting an identity provider.
 ## How does it work?
 
 If this authenticator gets configured as part of a browser based login flow, Keycloak will present a username form (without password form and without list of configured identity providers).
-A user can then enter an email address. Keycloak will then choose an identity provider based on the provided email domain and forward the user to the chosen provider.
+A user can then enter an email address. Keycloak will then choose an identity provider based on the domain part of the provided email address and forward the user to the chosen provider.
+
+The identity provider will be chosen by the following preference:
+1. If the `forwardToLinkedIdp` config option is enabled
+   1. Use the first linked identity provider with matching domain
+   2. Use the first linked identity provider
+   3. Use non-linked identity provider with matching domain
+2. If the `forwadToLinkedIdp` config option is disabled
+   1. Use the first identity provider with matching domain
+
+Only enabled and not link-only identity providers will be considered.
 
 ## How to install?
 
@@ -64,10 +74,12 @@ To configure click settings/gear icon (&#9881;)
 
 ![Authenticator configuration](docs/images/authenticator-config.jpg)
 
-| Option                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Forward to linked IdP | If switched on, federated users (with already linked IdPs) will be forwarded to a linked IdP even if no IdP has been configured for the user's email address. Federated users can also use their local username for login instead of their email address.<br><br> If switched off, users will only be forwarded to IdPs with matching email domains.                                                                                                                                                    |
-| User attribute        | The user attribute used to lookup the user's email address.<br><br>If set to `email` the authenticator will use the default email property. In this case the authenticator will only forward the user if the email has been verified. For any other attribute, the authenticator will not validate if the email has been verified. <br><br> A common use case is to store a User Principal Name (UPN) in a custom attribute and forward users based on the UPN instead instead of their email address.  |
+| Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| User attribute                | The user attribute used to lookup the user's email address.<br><br>If set to `email` (default) the authenticator will use the default email property. In this case the authenticator will only forward the user if the email has been verified. For any other attribute, the authenticator will not validate if the email has been verified. <br><br> A common use case is to store a User Principal Name (UPN) in a custom attribute and forward users based on the UPN instead instead of their email address.                                                                                                                                                                                                                            |
+| Bypass login page             | If switched on, users will be forwarded to their home IdP without the need to reenter/confirm their email address on the login page iff email address is provided as an OICD [`login_hint` parameter](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest) or SAML `subject/nameID`.<br><br> If switched off, users are only redirected after submitting/confirming their email address on the login page. (default)<br> <br> *Note: This will take SAML `ForceAuthn` and OIDC [`prompt=login&#124;consent&#124;select_account`](https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest) parameters into account. If one of these parameters is present, the login page will not be bypassed even if switched on.* |
+| Forward to linked IdP         | If switched on, federated users (with already linked IdPs) will be forwarded to a linked IdP even if no IdP has been configured for the user's email address. Federated users can also use their local username for login instead of their email address.<br><br> If switched off, users will only be forwarded to IdPs with matching email domains. (default)                                                                                                                                                                                                                                                                                                                                                                              |
+| Forward to first matched IdP  | If switched on, users will be forwarded to the first IdP that matches the email domain (default), even if multiply IdPs may match.<br><br>If switched off, user will be shown all IdPs that match the email domain to choose one, iff multiple match.<br>The user will only be able to choose from IdPs that match the email domain. Please note that also IdPs that have [`Hide on Login Page`](https://www.keycloak.org/docs/latest/server_admin/#_general-idp-config) switched on will be shown.<br>If only one IdP matches, behavior is the same as if switched on.                                                                                                                                                                     |
 
 ### Configure email domains
 
@@ -123,20 +135,38 @@ In the example above, the following domains will be effective when using the con
 
 Please note that the lookup is case-insensitive, so `email` will be the same as `Email` or `EMAIL`.
 
-## Show configured email domains in Admin console
+## Themes
 
-:warning: Please note that this currently only works with the old admin console. Please see https://github.com/sventorben/keycloak-home-idp-discovery/issues/86 for details.
+The authenticator supports internationalization and you can add additional languages or locales as needed.
 
-* Open `master` realm
-* Navigate to `Realm Settings`
-* Click `Themes` tab
-* Choose `home-idp-discovery` for the `Admin Console Theme`
-* Click `Save`
-* Reload the admin console (press F5 in your browser)
-* Navigate to an identity provider
-* Click `Home IdP Discovery` tab
+Please see the [Server Developer guide](https://www.keycloak.org/docs/latest/server_development/#messages) for detailed information.
 
-![View email domains](docs/images/view-idp-email-domains.jpg)
+### Customized messages for select login options dialog
+When you configured this authenticator as an alternative to other authenticators, Keycloak may show a link "Try Another Way" during login as shown below:
+
+![Sign in to your account dialog with "try another way" link](docs/images/sing-in-to-your-account.jpg)
+
+When clicking that link, the user can select the login method based on configured alternative authenticators.
+
+![Select login method dialog](docs/images/select-login-method.jpg)
+
+You can change the title and help text for this authenticator by adding the following messages to your custom theme:
+
+```properties
+home-idp-discovery-display-name=Home identity provider
+home-idp-discovery-help-text=Sign in via your home identity provider which will be automatically determined based on your provided email address.
+```
+
+### Customized messages for selecting an IdP during login
+If multiple IdPs match the email domain of the user, the user may be presented with a dialog to choose an identity provider (see config option `Forward to first matched IdP`).
+
+![Select IdP dialog](docs/images/select-idp.jpg)
+
+You can change the title by adding the following messages to your custom theme:
+
+```properties
+home-idp-discovery-identity-provider-login-label=Select your home identity provider
+```
 
 ## Frequently asked questions
 
@@ -147,7 +177,7 @@ For installation instructions, please refer to an [older version of this readme]
 Please note that with the release of Keycloak 20.0.0 the Wildfly-based distro is no longer supported.
 Hence, I dropped support for the Wildfly-based distro already. Though this library may still work with the Wildfly-based distro, I will no longer put any efforts into keeping this extension compatible.
 
-### Does it work with Keycloak version X.Y.Z?
+### Does it work with Keycloak / RedHat SSO version X.Y.Z?
 
 If you are using Keycloak version `X` (e.g. `X.y.z`), version `X.b.c` should be compatible.
 Keycloak SPIs are quite stable. So, there is a high chance this authenticator will work with other versions, too. Check the details of latest [build results](https://github.com/sventorben/keycloak-home-idp-discovery/actions/workflows/buildAndTest.yml) for an overview or simply give it a try.
@@ -155,3 +185,13 @@ Keycloak SPIs are quite stable. So, there is a high chance this authenticator wi
 Authenticator version `X.b.c` is compiled against Keycloak version `X.y.z`. For example, version `16.3.1` will be compiled against Keycloak version `16.y.z`.
 
 I do not guarantee what version `a.b` or `y.z` will be. Neither do I backport features to older version, nor maintain any older versions of this authenticator. If you need the latest features or bugfixes for an older version, please fork this project or update your Keycloak instance. I recommend doing the latter on regular basis anyways.
+
+For RedHat SSO versions, please check the corresponding Keycloak version [here](https://access.redhat.com/articles/2342881). Above rules apply ;)
+
+### User does not get redirected, but only sees a password form instead.
+Make sure that your users email is marked as verified. You can enable the `Email verified` flag per user or switch on `Trust Email` in the advanced settings of the identity provider.
+
+### User is not redirected to the correct identity provider. How to analyze the problem?
+You may want to increase the log level to see more fine-grained information on how the authenticator discovered the home identity provider.
+Try to increase the log level to `DEBUG` or even `TRACE` level. Details can be found in the official [Configuring logging](https://www.keycloak.org/server/logging) guide.
+The log category for the authenticator is `de.sventorben.keycloak.authentication.hidpd`.
