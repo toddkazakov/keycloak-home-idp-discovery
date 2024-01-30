@@ -10,22 +10,26 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ServerInfoAwareProviderFactory;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
 import static org.keycloak.models.AuthenticationExecutionModel.Requirement.*;
 
-public final class HomeIdpDiscoveryLoginHintAuthenticatorFactory implements AuthenticatorFactory, ServerInfoAwareProviderFactory {
+public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements AuthenticatorFactory, ServerInfoAwareProviderFactory {
 
-    private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, ALTERNATIVE, DISABLED};
 
-    private static final String PROVIDER_ID = "home-idp-discovery-login-hint";
+    private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, DISABLED};
+
+    private static final String PROVIDER_ID = "home-idp-discovery-matching-email";
+
+    public static final String CONF_NEGATE = "negate";
 
     private Config.Scope config;
 
     @Override
     public String getDisplayType() {
-        return "Home IdP Discovery (Login Hint)";
+        return "Home IdP Discovery (Check Email Matches Provider)";
     }
 
     @Override
@@ -50,17 +54,23 @@ public final class HomeIdpDiscoveryLoginHintAuthenticatorFactory implements Auth
 
     @Override
     public String getHelpText() {
-        return "Redirects users to their home identity provider based on the provided login hint";
+        return "Checks if the email attribute from the provider matches the configured SSO domains";
     }
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
-        return List.of();
+        ProviderConfigProperty negateOutput = new ProviderConfigProperty();
+        negateOutput.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        negateOutput.setName(CONF_NEGATE);
+        negateOutput.setLabel("Negate output");
+        negateOutput.setHelpText("Apply a NOT to the check result. When this is true, then the condition will evaluate to true if the email does NOT match the discovered idp.");
+
+        return List.of(negateOutput);
     }
 
     @Override
     public Authenticator create(KeycloakSession session) {
-        return new HomeIdpDiscoveryLoginHintAuthenticator();
+        return new HomeIdpDiscoveryMatchingEmailAuthenticator();
     }
 
     @Override
