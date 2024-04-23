@@ -19,6 +19,8 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import java.util.List;
 
+import de.sventorben.keycloak.services.messages.Messages;
+
 import static org.keycloak.protocol.oidc.OIDCLoginProtocol.LOGIN_HINT_PARAM;
 import static org.keycloak.services.validation.Validation.FIELD_USERNAME;
 
@@ -80,7 +82,13 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
 
         final List<IdentityProviderModel> homeIdps = context.discoverer().discoverForUser(username);
         if (homeIdps.isEmpty()) {
-            authenticationFlowContext.attempted();
+            if (authenticationFlowContext.getUser() != null) {
+                authenticationFlowContext.attempted();
+            } else {
+                authenticationFlowContext.getEvent().error(Errors.USER_NOT_FOUND);
+                Response challengeResponse = challenge(authenticationFlowContext, getMessageIfLoginEmailAllowed(authenticationFlowContext, Messages.UNKNOWN_USERNAME), FIELD_USERNAME);
+                authenticationFlowContext.failureChallenge(AuthenticationFlowError.UNKNOWN_USER, challengeResponse);
+            }
         } else {
             RememberMe rememberMe = context.rememberMe();
             rememberMe.handleAction(formData);
@@ -97,7 +105,7 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
         if (username == null) {
             LOG.warn("No or empty username found in request");
             context.getEvent().error(Errors.USER_NOT_FOUND);
-            Response challengeResponse = challenge(context, getDefaultChallengeMessage(context), FIELD_USERNAME);
+            Response challengeResponse = challenge(context, getMessageIfLoginEmailAllowed(context, Messages.MISSING_USERNAME), FIELD_USERNAME);
             context.failureChallenge(AuthenticationFlowError.INVALID_USER, challengeResponse);
             return null;
         }
@@ -155,4 +163,15 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
     public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
     }
 
+    private String getMessageIfLoginEmailAllowed(AuthenticationFlowContext context, String message) {
+        if (context.getRealm().isLoginWithEmailAllowed()) {
+            switch (message) {
+                case Messages.MISSING_USERNAME:
+                    return Messages.MISSING_EMAIL;
+                case Messages.UNKNOWN_USERNAME:
+                    return Messages.UNKNOWN_EMAIL;
+            }
+        }
+        return message;
+    }
 }
